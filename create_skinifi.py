@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 from os import listdir, remove, mkdir
 from os.path import exists
 from shutil import copyfile, rmtree, move
+import sys
 from zipfile import ZipFile
 
 from docker import from_env
@@ -107,11 +108,11 @@ def build_skinny_nifi_instance():
     _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip)
 
 
-def build_docker_image(target=True, tag='skinifi'):
+def build_docker_image(tag='skinifi', target=False):
     '''
     Create a skinifi docker image
-    @param target: create a target directory for the nifi instance and the docker image
     @param tag: the tag of the docker image (default is 'skinifi')
+    @param target: create a target directory for the nifi instance and the docker image
     '''
 
     create_whitelist()
@@ -135,4 +136,6 @@ def build_docker_image(target=True, tag='skinifi'):
         move(_whitelist_path, target_path)
 
 
-build_docker_image(target=True)
+tag = sys.argv[1] if sys.argv[1] else None
+target = sys.argv[2] if sys.argv[2] else False
+build_docker_image(tag=tag, target=target)
