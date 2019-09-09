@@ -6,5 +6,4 @@ custom-processors/*
 templates/*
 target/*
 !**/README.MD
-nar-whitelist.config
 skinny-nifi-1.9.2-bin.zip

@@ -32,7 +32,7 @@ def _get_nars_from_templates():
     '''
     @return list of nars used in template
     '''
-    required_nars = ESSENTIAL_NARS
+    template_nars = []
 
     for filepath in glob.glob('templates/*.xml'):
         print('adding nars from {}'.format(filepath))
@@ -46,10 +46,21 @@ def _get_nars_from_templates():
             if version is not None:
                 nar += '-' + version.text + '.nar'
 
-            if nar not in required_nars:
-                required_nars.append(nar)
+            if nar not in template_nars:
+                template_nars.append(nar)
 
-    return required_nars
+    return template_nars
+
+
+def _get_nars_from_registries():
+    '''
+    @return list of nars used in nifi registries
+    '''
+    registry_nars = []
+
+
+
+    return registry_nars
 
 
 def _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip):
@@ -61,7 +72,10 @@ def _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip)
 
 
 def build_skinny_nifi_instance():
-    required_nars = _get_nars_from_templates()
+    # find nars and delete duplicates
+    required_nars = ESSENTIAL_NARS + _get_nars_from_templates() + _get_nars_from_registries()
+    required_nars = list(dict.fromkeys(required_nars))
+
     copyfile(_IMAGE_DIR + '.skinny-nifi-1.9.2-bin.zip', _skinny_nifi_zip_path)
 
     generic_nars_zip = ZipFile(_generic_nars_path, mode='r')
