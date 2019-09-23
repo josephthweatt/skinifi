@@ -44,7 +44,8 @@ def _get_nars_from_templates():
 
             version = bundle.find('version')
             if version is not None:
-                nar += '-' + version.text + '.nar'
+                nar += '-' + version.text
+            nar += '.nar'
 
             if nar not in template_nars:
                 template_nars.append(nar)
@@ -58,6 +59,14 @@ def _get_nars_from_registries():
     '''
     registry_nars = []
 
+    with open('registries.json', 'r') as f:
+        registries_json = json.load(f)['registries']
+
+        for index, registry in enumerate(registries_json):
+            registry_name = registry['name'] or 'registry '.format(index + 1)
+            base_url = registry['baseUrl']
+            registry_items = str(requests.get(base_url).content)
+            
 
 
     return registry_nars
