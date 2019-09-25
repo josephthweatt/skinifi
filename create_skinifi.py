@@ -96,8 +96,6 @@ def build_skinny_nifi_instance():
             skinny_nifi_zip.write(tmp_path + nar_filename, _skinny_nifi_lib_path + nar_filename)
         else:
             print('nar file not found: {}'.format(nar_filename))
-            _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip)
-            exit()
 
     _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip)
 
@@ -139,7 +137,7 @@ def main(argv):
         if opt in ('-h', '--help'):
             print('create_skinifi.py --target --tag=my_skinifi')
         elif opt in ('-o', '--target'):
-            target = arg
+            target = True
         elif opt in ('-t', '--tag'):
             tag = arg
 
