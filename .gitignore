@@ -1,5 +1,6 @@
 .DS_Store
 __MACOSX/
+.idea/
 *.pyc
 .tmp/
 custom-processors/*
@@ -7,3 +8,4 @@ templates/*
 target/*
 !**/README.MD
 skinny-nifi-1.9.2-bin.zip
+*.json
