@@ -1,12 +1,17 @@
 import glob
-import xml.etree.ElementTree as ET
+import json
+import xml.etree.ElementTree as et
 from os import listdir, remove, mkdir
 from os.path import exists
 from shutil import copyfile, rmtree, move
-import sys, getopt
+import sys
+import getopt
 from zipfile import ZipFile
 
+import requests
 from docker import from_env
+
+from nipyapi import registry as nifi_registry
 
 # TODO: substitute hardcoded nifi version numbers with variable
 # nar files essential to nifi running
@@ -29,15 +34,15 @@ _generic_nars_path = _IMAGE_DIR + 'generic-nars.zip'
 
 
 def _get_nars_from_templates():
-    '''
+    """
     @return list of nars used in template
-    '''
+    """
     template_nars = []
 
     for filepath in glob.glob('templates/*.xml'):
         print('adding nars from {}'.format(filepath))
 
-        tree = ET.parse(filepath)
+        tree = et.parse(filepath)
         root = tree.getroot()
         for bundle in root.iter('bundle'):
             nar = bundle.find('artifact').text
@@ -50,25 +55,60 @@ def _get_nars_from_templates():
             if nar not in template_nars:
                 template_nars.append(nar)
 
+    print(template_nars)
+
     return template_nars
 
 
+def _get_nars_from_json(d, t):
+    if not isinstance(d, dict):
+        return
+
+    t_values = []
+    for k, v in d.items():
+        if k == t:
+            name = v['artifact'] + '-' + v['version']
+            t_values.append(name + '.nar')
+        elif isinstance(v, dict):
+            t_values.extend(_get_nars_from_json(v, t))
+        elif isinstance(v, list):
+            for i in list(filter(lambda i: isinstance(i, dict), v)):
+                t_values.extend(_get_nars_from_json(i, t))
+
+    return t_values
+
+
 def _get_nars_from_registries():
-    '''
+    """
     @return list of nars used in nifi registries
-    '''
+    """
     registry_nars = []
 
     with open('registries.json', 'r') as f:
         registries_json = json.load(f)['registries']
 
         for index, registry in enumerate(registries_json):
-            registry_name = registry['name'] or 'registry '.format(index + 1)
+            registry_name = registry['name'] or 'registry {}'.format(index + 1)
             base_url = registry['baseUrl']
-            registry_items = str(requests.get(base_url).content)
-            
+            registry_api_url = base_url + "/nifi-registry-api"
+            client = nifi_registry.api_client.ApiClient()
 
+            for bucket in registry['buckets']:
+                bucket_id = bucket['bucketId']
+                for flow in bucket['flows']:
+                    flow_id = flow['flowId']
+                    versions = flow.get('versions', ['latest'])
 
+                    for version in versions:
+                        response = client.request('GET', '{}/buckets/{}/flows/{}/versions/{}'.format(
+                            registry_api_url, bucket_id, flow_id, version))
+                        flow_json = json.loads(response.data)
+
+                        for nar in _get_nars_from_json(flow_json, 'bundle'):
+                            if nar not in registry_nars:
+                                registry_nars.append(nar)
+
+    print(registry_nars)
     return registry_nars
 
 
@@ -110,11 +150,11 @@ def build_skinny_nifi_instance():
 
 
 def build_docker_image(tag='skinifi', target=False):
-    '''
+    """
     Create a skinifi docker image
     @param tag: the tag of the docker image (default is 'skinifi')
     @param target: create a target directory for the nifi instance and the docker image
-    '''
+    """
     build_skinny_nifi_instance()
     print('Skinny nifi instance created\nCreating docker image...')
 
