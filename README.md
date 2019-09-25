@@ -21,7 +21,7 @@ these files for artifacts to include into the NiFi image.
 ### Adding a Template
 1. Create a template using an existing NiFi instance. Learn how
 
-2. Save the template as an xml and copy it to the **templates** directory
+2. Save the template as an xml and copy it to **templates/**
 
 3. Running `create_skinifi` will automatically parse xml templates in this directory
 
@@ -33,12 +33,12 @@ these files for artifacts to include into the NiFi image.
     
 3. Running `create_skinifi` will automatically parse flows specified in **registries.json**
 
-IMPORTANT: If you are using custom processors in your flow you will need to add the nar file to the 
-**custom-processors** directory. Skinifi is not yet capable of pulling down nar files from NiFi Registry.
+IMPORTANT: If you are using custom processors in your flow you will need to add the nar file to 
+**custom-processors/**. Skinifi is not yet capable of pulling down nar files from NiFi Registry.
 
 ### Adding Custom Processors
-If you are using custom processors in your work, you will need to add the nar file to the 
-**custom-processors** directory. Nar files which are specified in either a template or Flow will be copied into the 
+If you are using custom processors in your work, you will need to add the nar file to 
+**custom-processors/**. Nar files which are specified in either a template or Flow will be copied into the 
 skinifi image.
 
 Note: `create_skinifi` does not search **custom-processors** for nar files recursively. Avoid adding subdirectories
