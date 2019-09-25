@@ -1,0 +1,33 @@
+/**
+  Example of a nifi registry configuration. The nars used in these flows will be noted, but nars
+  will be extracted from the custom_processors folder and skinifi-image/generic_nars.zip
+
+  Name your json file "registries.json" and save it to the root directory
+
+  (pulling nars from registry api is a WIP)
+*/
+{
+  "registries": [
+    {
+      "name": "local registry",
+      "baseUrl": "http://localhost:18080",
+      "buckets": [
+        {
+          "bucketId": "ag4s901-f4ab-40e2-8b63-86lu629gg599",
+          "flows": [
+            {
+              "flowId": "e2feb232-91bf-45cc-ad37-3wfess75ae28"
+            },
+            {
+              "flowId": "752fa8j3-5670-452f-a08c-8fb0cbcad0c1",
+              "versions": [1, 3]
+            },
+            {
+              "flowId": "d39ke46b-6e8c-4fa0-9de9-650k2jee40e2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
