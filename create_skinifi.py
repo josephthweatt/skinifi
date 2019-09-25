@@ -1,14 +1,12 @@
+import argparse
 import glob
 import json
 import xml.etree.ElementTree as et
 from os import listdir, remove, mkdir
 from os.path import exists
 from shutil import copyfile, rmtree, move
-import sys
-import getopt
 from zipfile import ZipFile
 
-import requests
 from docker import from_env
 
 from nipyapi import registry as nifi_registry
@@ -55,27 +53,27 @@ def _get_nars_from_templates():
             if nar not in template_nars:
                 template_nars.append(nar)
 
-    print(template_nars)
-
     return template_nars
 
 
-def _get_nars_from_json(d, t):
+# Recursively search for bundles in the flow's json
+def _get_nars_from_json(d):
     if not isinstance(d, dict):
         return
 
-    t_values = []
+    bundle = "bundle"
+    nars = []
     for k, v in d.items():
-        if k == t:
+        if k == bundle:
             name = v['artifact'] + '-' + v['version']
-            t_values.append(name + '.nar')
+            nars.append(name + '.nar')
         elif isinstance(v, dict):
-            t_values.extend(_get_nars_from_json(v, t))
+            nars.extend(_get_nars_from_json(v))
         elif isinstance(v, list):
             for i in list(filter(lambda i: isinstance(i, dict), v)):
-                t_values.extend(_get_nars_from_json(i, t))
+                nars.extend(_get_nars_from_json(i))
 
-    return t_values
+    return nars
 
 
 def _get_nars_from_registries():
@@ -104,11 +102,10 @@ def _get_nars_from_registries():
                             registry_api_url, bucket_id, flow_id, version))
                         flow_json = json.loads(response.data)
 
-                        for nar in _get_nars_from_json(flow_json, 'bundle'):
+                        for nar in _get_nars_from_json(flow_json):
                             if nar not in registry_nars:
                                 registry_nars.append(nar)
 
-    print(registry_nars)
     return registry_nars
 
 
@@ -131,7 +128,7 @@ def build_skinny_nifi_instance():
     skinny_nifi_zip = ZipFile(_skinny_nifi_zip_path, mode='a')
 
     # path to lib within skinny nifi zipped folder
-    _skinny_nifi_lib_path = 'skinny-nifi-1.9.2/lib/'
+    skinny_nifi_lib_path = 'skinny-nifi-1.9.2/lib/'
 
     # a temporary directory for decompressed generic nars
     tmp_path = '.tmp/'
@@ -139,10 +136,10 @@ def build_skinny_nifi_instance():
     for nar_filename in required_nars:
         # add nar file to skinny nifi instance
         if nar_filename in listdir(_CUSTOM_NAR_DIR):
-            skinny_nifi_zip.write(_CUSTOM_NAR_DIR + nar_filename, _skinny_nifi_lib_path + nar_filename)
+            skinny_nifi_zip.write(_CUSTOM_NAR_DIR + nar_filename, skinny_nifi_lib_path + nar_filename)
         elif nar_filename in generic_nars_zip.namelist():
             generic_nars_zip.extract(nar_filename, path=tmp_path)
-            skinny_nifi_zip.write(tmp_path + nar_filename, _skinny_nifi_lib_path + nar_filename)
+            skinny_nifi_zip.write(tmp_path + nar_filename, skinny_nifi_lib_path + nar_filename)
         else:
             print('nar file not found: {}'.format(nar_filename))
 
@@ -173,25 +170,15 @@ def build_docker_image(tag='skinifi', target=False):
         remove(_skinny_nifi_zip_path)
 
 
-def main(argv):
-    tag = 'skinifi'
-    target = False
-    try:
-        opts, args = getopt.getopt(argv, 'hot:', ['help', 'target', 'tag='])
-    except getopt.GetoptError:
-        print('Invalid arguments: create_skinifi.py -o -t <tag_name>')
-        sys.exit(2)
-
-    for opt, arg in opts:
-        if opt in ('-h', '--help'):
-            print('create_skinifi.py --target --tag=my_skinifi')
-        elif opt in ('-o', '--target'):
-            target = True
-        elif opt in ('-t', '--tag'):
-            tag = arg
-
-    build_docker_image(tag=tag, target=target)
-
-
 if __name__ == '__main__':
-   main(sys.argv[1:])
+    # tag = 'skinifi'
+    # target = False
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-o', '--target',
+                        help='keep created nifi instance in target/', action='store_true', default=False)
+    parser.add_argument('-t', '--tag', type=str,
+                        help='specify a tag for the docker image. Default is \'skinifi\'', default='skinifi')
+    args = parser.parse_args()
+
+    build_docker_image(tag=args.tag, target=args.target)
