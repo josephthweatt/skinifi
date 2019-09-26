@@ -109,15 +109,11 @@ def _get_nars_from_registries():
     return registry_nars
 
 
-def _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip):
-    if exists(tmp_path):
-        rmtree(tmp_path)
-
-    skinny_nifi_zip.close()
-    generic_nars_zip.close()
-
-
-def build_skinny_nifi_instance():
+def build_skinifi_instance():
+    """
+    Create a zip of nifi with reduced artifacts to skinifi-image/skinny-nifi-1.9.2-bin.zip
+    :return:
+    """
     # find nars and delete duplicates
     required_nars = ESSENTIAL_NARS + _get_nars_from_templates() + _get_nars_from_registries()
     required_nars = list(dict.fromkeys(required_nars))
@@ -143,7 +139,11 @@ def build_skinny_nifi_instance():
         else:
             print('nar file not found: {}'.format(nar_filename))
 
-    _cleanup_nifi_instance_creation(tmp_path, skinny_nifi_zip, generic_nars_zip)
+    if exists(tmp_path):
+        rmtree(tmp_path)
+
+    skinny_nifi_zip.close()
+    generic_nars_zip.close()
 
 
 def build_docker_image(tag='skinifi', target=False):
@@ -152,7 +152,7 @@ def build_docker_image(tag='skinifi', target=False):
     @param tag: the tag of the docker image (default is 'skinifi')
     @param target: create a target directory for the nifi instance and the docker image
     """
-    build_skinny_nifi_instance()
+    build_skinifi_instance()
     print('Skinny nifi instance created\nCreating docker image...')
 
     # create docker image
