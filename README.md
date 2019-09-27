@@ -5,7 +5,6 @@ Skinifi (skinny-nifi) is a python tool for creating NiFi images without unneeded
 
 NiFi's default image is currently a couple Gigabytes in size, largely due to the trove of useful libraries. However, 
 this becomes a problem in environments where space is limited or when images are frequently moved around. 
-While MiNiFi is a helpful alternative, it is sometimes preferable to have access to NiFi's workspace.
 
 A skinifi image by default is only 600 MB and contains only the artifacts needed to run. This tool also allows you
 to specify the Process Groups you need to use and imports the processors needed for them to run.
