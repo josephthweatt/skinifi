@@ -227,5 +227,20 @@ if __name__ == '__main__':
                         default=_CUSTOM_NAR_DIR)
 
     args = parser.parse_args()
+
+    bad_args = False
+
+    # Validate arguments
+    if not validators.url(args.custom_nar_directory) and not exists(args.custom_nar_directory):
+        print('ERROR: Invalid custom nar directory')
+        bad_args = True
+
+    if not validators.url(args.generic_nar_directory) and not exists(args.generic_nar_directory):
+        print('ERROR: Invalid generic nar directory')
+        bad_args = True
+
+    if bad_args:
+        exit()
+
     build_docker_image(tag=args.tag, generic_nar_path=args.generic_nar_directory,
                        custom_nar_path=args.custom_nar_directory, target=args.target)
