@@ -38,8 +38,14 @@ IMPORTANT: If you are using custom processors in your flow you will need to add 
 
 ### Adding Custom Processors
 If you are using custom processors in your work, you will need to add the nar file to 
-**custom-processors/**. Nar files which are specified in either a template or Flow will be copied into the 
-skinifi image.
+**custom-processors/** or by specifying a path with the `--custom-nar-directory` flag. Nar files which are specified 
+in either a template or Flow will be copied into the skinifi image.
 
 Note: `create_skinifi` does not search **custom-processors** for nar files recursively. Avoid adding subdirectories
 to here
+
+### Adding Default Processors
+By default, `create_skinifi` will download the required default processors from an online repository. If you want to use
+a different path or url, set that with the ` --generic-nar-directory` flag.
+
+Once downloaded, skinifi will save the processors to **skinifi-image/generic-nars/** for future use.
