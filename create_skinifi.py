@@ -15,7 +15,6 @@ from nipyapi import registry as nifi_registry
 
 NIFI_VERSION = '1.9.2'
 
-# TODO: substitute hardcoded nifi version numbers with variable
 # nar files essential to nifi running
 ESSENTIAL_NARS = [
     'nifi-standard-nar-{}.nar'.format(NIFI_VERSION),
@@ -99,7 +98,7 @@ def _get_nars_from_json(d):
         elif isinstance(v, dict):
             nars.extend(_get_nars_from_json(v))
         elif isinstance(v, list):
-            for i in list(filter(lambda i: isinstance(i, dict), v)):
+            for i in list(filter(lambda x: isinstance(x, dict), v)):
                 nars.extend(_get_nars_from_json(i))
 
     return nars
@@ -199,15 +198,15 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
         if exists(custom_nar_filepath):
             skinny_nifi_zip.write(custom_nar_filepath, target_filepath)
 
-        elif exists(saved_generic_nar_filepath):
-            skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
-
         elif validators.url(custom_nar_filepath):
             r = requests.get(custom_nar_filepath, allow_redirects=True)
             if r.status_code == 200:
                 tmp_nar_filepath = tmp_path + nar_filename
                 open(tmp_nar_filepath, 'wb').write(r.content)
                 skinny_nifi_zip.write(tmp_nar_filepath, target_filepath)
+
+        elif exists(saved_generic_nar_filepath):
+            skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
 
         elif validators.url(generic_nar_filepath):
             r = requests.get(generic_nar_filepath, allow_redirects=True)
