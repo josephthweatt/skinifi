@@ -14,6 +14,7 @@
       "buckets": [
         {
           "bucketId": "ag4s901-f4ab-40e2-8b63-86lu629gg599",
+          "useBundles": true,
           "flows": [
             {
               "flowId": "e2feb232-91bf-45cc-ad37-3wfess75ae28"

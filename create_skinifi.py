@@ -141,15 +141,16 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
 
     # add nar files to skinny nifi instance
     for nar_filename in required_nars:
-        generic_nar_filepath = generic_nars_path + nar_filename
         custom_nar_filepath = custom_nars_path + nar_filename
+        saved_generic_nar_filepath = _SAVED_GENERIC_NAR_PATH + nar_filename
+        generic_nar_filepath = generic_nars_path + nar_filename
         target_filepath = skinny_nifi_lib_path + nar_filename
 
-        if exists(custom_nars_path + nar_filename):
-            skinny_nifi_zip.write(custom_nars_path + nar_filename, target_filepath)
+        if exists(custom_nar_filepath):
+            skinny_nifi_zip.write(custom_nar_filepath, target_filepath)
 
-        elif exists(_SAVED_GENERIC_NAR_PATH + nar_filename):
-            skinny_nifi_zip.write(_SAVED_GENERIC_NAR_PATH + nar_filename, target_filepath)
+        elif exists(saved_generic_nar_filepath):
+            skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
 
         elif validators.url(custom_nar_filepath):
             r = requests.get(custom_nar_filepath, allow_redirects=True)
@@ -162,9 +163,8 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
             r = requests.get(generic_nar_filepath, allow_redirects=True)
             if r.status_code == 200:
                 # download and save nars into a directory to avoid re-downloading
-                saved_nar_filepath = _SAVED_GENERIC_NAR_PATH + nar_filename
-                open(saved_nar_filepath, 'wb').write(r.content)
-                skinny_nifi_zip.write(saved_nar_filepath, target_filepath)
+                open(saved_generic_nar_filepath, 'wb').write(r.content)
+                skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
 
         else:
             print('nar file not found: {}'.format(nar_filename))
