@@ -7,5 +7,6 @@ custom-processors/*
 templates/*
 target/*
 !**/README.MD
+skinifi-image/generic-nars/
 skinny-nifi-1.9.2-bin.zip
 *.json

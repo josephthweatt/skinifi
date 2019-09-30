@@ -1,8 +1,10 @@
 import argparse
 import glob
 import json
+import requests
+import validators
 import xml.etree.ElementTree as et
-from os import listdir, remove, mkdir
+from os import remove, mkdir
 from os.path import exists
 from shutil import copyfile, rmtree, move
 from zipfile import ZipFile
@@ -24,16 +26,17 @@ ESSENTIAL_NARS = [
     'nifi-jetty-bundle-1.9.2.nar'
 ]
 
+DEFAULT_GENERIC_URL = 'https://nifi-default-artifacts.s3.amazonaws.com/'
+
 _IMAGE_DIR = 'skinifi-image/'
 _CUSTOM_NAR_DIR = 'custom-processors/'
-
-_skinny_nifi_zip_path = _IMAGE_DIR + 'skinny-nifi-1.9.2-bin.zip'
-_generic_nars_path = _IMAGE_DIR + 'generic-nars.zip'
+_SAVED_GENERIC_NAR_PATH = _IMAGE_DIR + 'generic-nars/'
+_SKINNY_NIFI_ZIP_PATH = _IMAGE_DIR + 'skinny-nifi-1.9.2-bin.zip'
 
 
 def _get_nars_from_templates():
     """
-    @return list of nars used in template
+    :return: list of nars used in template
     """
     template_nars = []
 
@@ -78,7 +81,7 @@ def _get_nars_from_json(d):
 
 def _get_nars_from_registries():
     """
-    @return list of nars used in nifi registries
+    :return: list of nars used in nifi registries
     """
     registry_nars = []
 
@@ -86,7 +89,6 @@ def _get_nars_from_registries():
         registries_json = json.load(f)['registries']
 
         for index, registry in enumerate(registries_json):
-            registry_name = registry['name'] or 'registry {}'.format(index + 1)
             base_url = registry['baseUrl']
             registry_api_url = base_url + "/nifi-registry-api"
             client = nifi_registry.api_client.ApiClient()
@@ -109,33 +111,61 @@ def _get_nars_from_registries():
     return registry_nars
 
 
-def build_skinifi_instance():
+def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_path=_CUSTOM_NAR_DIR):
     """
     Create a zip of nifi with reduced artifacts to skinifi-image/skinny-nifi-1.9.2-bin.zip
+    :param generic_nars_path: str - url or path to copy generic nars
+    :param custom_nars_path: str - url or path to copy custom nars
     :return:
     """
-    # find nars and delete duplicates
-    required_nars = ESSENTIAL_NARS + _get_nars_from_templates() + _get_nars_from_registries()
-    required_nars = list(dict.fromkeys(required_nars))
-
-    copyfile(_IMAGE_DIR + '.skinny-nifi-1.9.2-bin.zip', _skinny_nifi_zip_path)
-
-    generic_nars_zip = ZipFile(_generic_nars_path, mode='r')
-    skinny_nifi_zip = ZipFile(_skinny_nifi_zip_path, mode='a')
+    generic_nars_path += '/' if not generic_nars_path.endswith('/') else ''
+    custom_nars_path += '/' if not custom_nars_path.endswith('/') else ''
 
     # path to lib within skinny nifi zipped folder
     skinny_nifi_lib_path = 'skinny-nifi-1.9.2/lib/'
 
-    # a temporary directory for decompressed generic nars
-    tmp_path = '.tmp/'
+    if not exists(_SAVED_GENERIC_NAR_PATH):
+        mkdir(_SAVED_GENERIC_NAR_PATH)
 
+    # a temporary directory for downloaded custom nars
+    tmp_path = '.tmp/'
+    if not exists(tmp_path):
+        mkdir(tmp_path)
+
+    # find nars and delete duplicates
+    required_nars = ESSENTIAL_NARS + _get_nars_from_templates() + _get_nars_from_registries()
+    required_nars = list(dict.fromkeys(required_nars))
+
+    copyfile(_IMAGE_DIR + '.skinny-nifi-1.9.2-bin.zip', _SKINNY_NIFI_ZIP_PATH)
+    skinny_nifi_zip = ZipFile(_SKINNY_NIFI_ZIP_PATH, mode='a')
+
+    # add nar files to skinny nifi instance
     for nar_filename in required_nars:
-        # add nar file to skinny nifi instance
-        if nar_filename in listdir(_CUSTOM_NAR_DIR):
-            skinny_nifi_zip.write(_CUSTOM_NAR_DIR + nar_filename, skinny_nifi_lib_path + nar_filename)
-        elif nar_filename in generic_nars_zip.namelist():
-            generic_nars_zip.extract(nar_filename, path=tmp_path)
-            skinny_nifi_zip.write(tmp_path + nar_filename, skinny_nifi_lib_path + nar_filename)
+        generic_nar_filepath = generic_nars_path + nar_filename
+        custom_nar_filepath = custom_nars_path + nar_filename
+        target_filepath = skinny_nifi_lib_path + nar_filename
+
+        if exists(custom_nars_path + nar_filename):
+            skinny_nifi_zip.write(custom_nars_path + nar_filename, target_filepath)
+
+        elif exists(_SAVED_GENERIC_NAR_PATH + nar_filename):
+            skinny_nifi_zip.write(_SAVED_GENERIC_NAR_PATH + nar_filename, target_filepath)
+
+        elif validators.url(custom_nar_filepath):
+            r = requests.get(custom_nar_filepath, allow_redirects=True)
+            if r.status_code == 200:
+                tmp_nar_filepath = tmp_path + nar_filename
+                open(tmp_nar_filepath, 'wb').write(r.content)
+                skinny_nifi_zip.write(tmp_nar_filepath, target_filepath)
+
+        elif validators.url(generic_nar_filepath):
+            r = requests.get(generic_nar_filepath, allow_redirects=True)
+            if r.status_code == 200:
+                # download and save nars into a directory to avoid re-downloading
+                saved_nar_filepath = _SAVED_GENERIC_NAR_PATH + nar_filename
+                open(saved_nar_filepath, 'wb').write(r.content)
+                skinny_nifi_zip.write(saved_nar_filepath, target_filepath)
+
         else:
             print('nar file not found: {}'.format(nar_filename))
 
@@ -143,16 +173,22 @@ def build_skinifi_instance():
         rmtree(tmp_path)
 
     skinny_nifi_zip.close()
-    generic_nars_zip.close()
 
 
-def build_docker_image(tag='skinifi', target=False):
+def build_docker_image(generic_nar_path=DEFAULT_GENERIC_URL, custom_nar_path=_CUSTOM_NAR_DIR, tag='skinifi', target=False):
     """
     Create a skinifi docker image
-    @param tag: the tag of the docker image (default is 'skinifi')
-    @param target: create a target directory for the nifi instance and the docker image
+    :param generic_nar_path: str - a directory to include generic nars from. Can be a url or a filepath
+    :param custom_nar_path: str - a directory to include custom nars from. Can be a url or a filepath
+    :param tag: str - the tag of the docker image (default is 'skinifi')
+    :param target: bool - create a target directory for the nifi instance and the docker image
     """
-    build_skinifi_instance()
+
+    if custom_nar_path:
+        build_skinifi_instance(generic_nar_path, custom_nar_path)
+    else:
+        build_skinifi_instance(generic_nar_path)
+
     print('Skinny nifi instance created\nCreating docker image...')
 
     # create docker image
@@ -164,10 +200,10 @@ def build_docker_image(tag='skinifi', target=False):
         if exists(target_path):
             rmtree(target_path)
         mkdir(target_path)
-        move(_skinny_nifi_zip_path, target_path)
+        move(_SKINNY_NIFI_ZIP_PATH, target_path)
 
     else:
-        remove(_skinny_nifi_zip_path)
+        remove(_SKINNY_NIFI_ZIP_PATH)
 
 
 if __name__ == '__main__':
@@ -176,9 +212,35 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--target',
-                        help='keep created nifi instance in target/', action='store_true', default=False)
+                        help='Keep created nifi instance in target/', action='store_true', default=False)
     parser.add_argument('-t', '--tag', type=str,
-                        help='specify a tag for the docker image. Default is \'skinifi\'', default='skinifi')
+                        help='Specify a tag for the docker image. Default is \'skinifi\'', default='skinifi')
+    parser.add_argument('-gd', '--generic-nar-directory', type=str,
+                        help='Specify a directory to include generic nars from. Can be a url or a path, by default '
+                             'nars will be downloaded from an existing repo and saved to {}'
+                        .format(_SAVED_GENERIC_NAR_PATH),
+                        default=DEFAULT_GENERIC_URL)
+    parser.add_argument('-cd', '--custom-nar-directory', type=str,
+                        help='Specify a directory to include custom nars from. Can be a url or a path, by default {} '
+                             'will be searched for custom nars'
+                        .format(_CUSTOM_NAR_DIR),
+                        default=_CUSTOM_NAR_DIR)
+
     args = parser.parse_args()
 
-    build_docker_image(tag=args.tag, target=args.target)
+    bad_args = False
+
+    # Validate arguments
+    if not validators.url(args.custom_nar_directory) and not exists(args.custom_nar_directory):
+        print('ERROR: Invalid custom nar directory')
+        bad_args = True
+
+    if not validators.url(args.generic_nar_directory) and not exists(args.generic_nar_directory):
+        print('ERROR: Invalid generic nar directory')
+        bad_args = True
+
+    if bad_args:
+        exit()
+
+    build_docker_image(tag=args.tag, generic_nar_path=args.generic_nar_directory,
+                       custom_nar_path=args.custom_nar_directory, target=args.target)
