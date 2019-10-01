@@ -175,7 +175,7 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
     # add nar files from nifi registry to skinifi instance
     for nar in bundled_nars:
         nar_filename = nar.get_filename()
-        print("getting {}".format(nar_filename))
+        print("Downloading {} ...".format(nar_filename))
 
         bundle_content_endpoint = '{}/extension-repository/{}/{}/{}/{}/content'\
             .format(nar.api_url, nar.bucket_name, nar.group, nar.artifact, nar.version)
@@ -199,6 +199,7 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
             skinny_nifi_zip.write(custom_nar_filepath, target_filepath)
 
         elif validators.url(custom_nar_filepath):
+            print("Downloading {} ...".format(nar_filename))
             r = requests.get(custom_nar_filepath, allow_redirects=True)
             if r.status_code == 200:
                 tmp_nar_filepath = tmp_path + nar_filename
@@ -209,6 +210,7 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
             skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
 
         elif validators.url(generic_nar_filepath):
+            print("Downloading {} ...".format(nar_filename))
             r = requests.get(generic_nar_filepath, allow_redirects=True)
             if r.status_code == 200:
                 # download and save nars into a directory to avoid re-downloading
