@@ -115,7 +115,7 @@ def _get_nars_from_registries():
 
         for index, registry in enumerate(registries_json):
             base_url = registry['baseUrl']
-            reg_api_url = base_url + "/nifi-registry-api"
+            registry_api_url = base_url + "/nifi-registry-api"
             client = nifi_registry.api_client.ApiClient()
             use_bundles = registry['useBundles']
 
@@ -127,7 +127,7 @@ def _get_nars_from_registries():
 
                     for version in versions:
                         response = client.request('GET', '{}/buckets/{}/flows/{}/versions/{}'.format(
-                            reg_api_url, bucket_id, flow_id, version))
+                            registry_api_url, bucket_id, flow_id, version))
                         flow_json = json.loads(response.data)
                         bucket_name = flow_json['bucket']['name']
 
@@ -135,7 +135,7 @@ def _get_nars_from_registries():
                             nar_filename = nar.get_filename()
                             if nar_filename not in registry_nars:
                                 if use_bundles:
-                                    nar.set_bundle_info(reg_api_url, bucket_name)
+                                    nar.set_bundle_info(registry_api_url, bucket_name)
                                 registry_nars[nar_filename] = nar
 
     return registry_nars.values()
