@@ -108,6 +108,9 @@ def _get_nars_from_registries():
     """
     :return: list of Nars used in nifi registries.
     """
+    if not exists('registries.json'):
+        return
+
     registry_nars = {}
 
     with open('registries.json', 'r') as f:
