@@ -11,6 +11,7 @@
     {
       "name": "local registry",
       "baseUrl": "http://localhost:18080",
+      "useBundles": true,
       "buckets": [
         {
           "bucketId": "ag4s901-f4ab-40e2-8b63-86lu629gg599",

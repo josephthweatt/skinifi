@@ -13,17 +13,18 @@ from docker import from_env
 
 from nipyapi import registry as nifi_registry
 
-# TODO: substitute hardcoded nifi version numbers with variable
+NIFI_VERSION = '1.9.2'
+
 # nar files essential to nifi running
 ESSENTIAL_NARS = [
-    'nifi-standard-nar-1.9.2.nar',
-    'nifi-standard-services-api-nar-1.9.2.nar',
-    'nifi-framework-nar-1.9.2.nar',
-    'nifi-provenance-repository-nar-1.9.2.nar',
-    'nifi-websocket-processors-nar-1.9.2.nar',
-    'nifi-websocket-services-api-nar-1.9.2.nar',
-    'nifi-websocket-services-jetty-nar-1.9.2.nar',
-    'nifi-jetty-bundle-1.9.2.nar'
+    'nifi-standard-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-standard-services-api-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-framework-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-provenance-repository-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-websocket-processors-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-websocket-services-api-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-websocket-services-jetty-nar-{}.nar'.format(NIFI_VERSION),
+    'nifi-jetty-bundle-{}.nar'.format(NIFI_VERSION)
 ]
 
 DEFAULT_GENERIC_URL = 'https://nifi-default-artifacts.s3.amazonaws.com/'
@@ -59,8 +60,32 @@ def _get_nars_from_templates():
     return template_nars
 
 
-# Recursively search for bundles in the flow's json
+class Nar:
+
+    def __init__(self, artifact, group, version, api_url=None, bucket_name=None):
+        self.artifact = artifact
+        self.group = group
+        self.version = version
+        self.api_url = api_url
+        self.bucket_name = bucket_name
+
+    def get_filename(self):
+        return self.artifact + '-' + self.version + '.nar'
+
+    def set_bundle_info(self, api_url, bucket_name):
+        self.api_url = api_url
+        self.bucket_name = bucket_name
+
+    def has_bundle_info(self):
+        return bool(self.api_url and self.bucket_name)
+
+
 def _get_nars_from_json(d):
+    """
+    Recursively search for bundles in the flow's json
+    :param d: dict containing json
+    :return: list of nar objects
+    """
     if not isinstance(d, dict):
         return
 
@@ -68,12 +93,12 @@ def _get_nars_from_json(d):
     nars = []
     for k, v in d.items():
         if k == bundle:
-            name = v['artifact'] + '-' + v['version']
-            nars.append(name + '.nar')
+            nar = Nar(v['artifact'], v['group'], v['version'])
+            nars.append(nar)
         elif isinstance(v, dict):
             nars.extend(_get_nars_from_json(v))
         elif isinstance(v, list):
-            for i in list(filter(lambda i: isinstance(i, dict), v)):
+            for i in list(filter(lambda x: isinstance(x, dict), v)):
                 nars.extend(_get_nars_from_json(i))
 
     return nars
@@ -81,9 +106,12 @@ def _get_nars_from_json(d):
 
 def _get_nars_from_registries():
     """
-    :return: list of nars used in nifi registries
+    :return: list of Nars used in nifi registries.
     """
-    registry_nars = []
+    if not exists('registries.json'):
+        return
+
+    registry_nars = {}
 
     with open('registries.json', 'r') as f:
         registries_json = json.load(f)['registries']
@@ -92,6 +120,7 @@ def _get_nars_from_registries():
             base_url = registry['baseUrl']
             registry_api_url = base_url + "/nifi-registry-api"
             client = nifi_registry.api_client.ApiClient()
+            use_bundles = registry['useBundles']
 
             for bucket in registry['buckets']:
                 bucket_id = bucket['bucketId']
@@ -103,12 +132,16 @@ def _get_nars_from_registries():
                         response = client.request('GET', '{}/buckets/{}/flows/{}/versions/{}'.format(
                             registry_api_url, bucket_id, flow_id, version))
                         flow_json = json.loads(response.data)
+                        bucket_name = flow_json['bucket']['name']
 
                         for nar in _get_nars_from_json(flow_json):
-                            if nar not in registry_nars:
-                                registry_nars.append(nar)
+                            nar_filename = nar.get_filename()
+                            if nar_filename not in registry_nars:
+                                if use_bundles:
+                                    nar.set_bundle_info(registry_api_url, bucket_name)
+                                registry_nars[nar_filename] = nar
 
-    return registry_nars
+    return registry_nars.values()
 
 
 def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_path=_CUSTOM_NAR_DIR):
@@ -133,38 +166,59 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
         mkdir(tmp_path)
 
     # find nars and delete duplicates
-    required_nars = ESSENTIAL_NARS + _get_nars_from_templates() + _get_nars_from_registries()
-    required_nars = list(dict.fromkeys(required_nars))
+    nars_from_registry = _get_nars_from_registries()
+    bundled_nars = list(filter(lambda n: n.has_bundle_info(), nars_from_registry))
+    unbundled_nars = list(filter(lambda n: n.get_filename() if not n.has_bundle_info() else None, nars_from_registry))
+    unbundled_nars += ESSENTIAL_NARS + _get_nars_from_templates()
+    unbundled_nars = list(dict.fromkeys(unbundled_nars))
 
     copyfile(_IMAGE_DIR + '.skinny-nifi-1.9.2-bin.zip', _SKINNY_NIFI_ZIP_PATH)
     skinny_nifi_zip = ZipFile(_SKINNY_NIFI_ZIP_PATH, mode='a')
 
-    # add nar files to skinny nifi instance
-    for nar_filename in required_nars:
-        generic_nar_filepath = generic_nars_path + nar_filename
+    # add nar files from nifi registry to skinifi instance
+    for nar in bundled_nars:
+        nar_filename = nar.get_filename()
+        print("Downloading {} ...".format(nar_filename))
+
+        bundle_content_endpoint = '{}/extension-repository/{}/{}/{}/{}/content'\
+            .format(nar.api_url, nar.bucket_name, nar.group, nar.artifact, nar.version)
+        r = requests.get(bundle_content_endpoint, allow_redirects=True)
+        if r.status_code == 200:
+            tmp_nar_filepath = tmp_path + nar_filename
+            open(tmp_nar_filepath, 'wb').write(r.content)
+            skinny_nifi_zip.write(tmp_nar_filepath, skinny_nifi_lib_path + nar_filename)
+
+    # add nar files to skinifi instance
+    for nar_filename in unbundled_nars:
         custom_nar_filepath = custom_nars_path + nar_filename
+        saved_generic_nar_filepath = _SAVED_GENERIC_NAR_PATH + nar_filename
+        generic_nar_filepath = generic_nars_path + nar_filename
         target_filepath = skinny_nifi_lib_path + nar_filename
 
-        if exists(custom_nars_path + nar_filename):
-            skinny_nifi_zip.write(custom_nars_path + nar_filename, target_filepath)
+        if target_filepath in skinny_nifi_zip.namelist():
+            continue
 
-        elif exists(_SAVED_GENERIC_NAR_PATH + nar_filename):
-            skinny_nifi_zip.write(_SAVED_GENERIC_NAR_PATH + nar_filename, target_filepath)
+        if exists(custom_nar_filepath):
+            skinny_nifi_zip.write(custom_nar_filepath, target_filepath)
 
         elif validators.url(custom_nar_filepath):
+            print("Downloading {} ...".format(nar_filename))
             r = requests.get(custom_nar_filepath, allow_redirects=True)
             if r.status_code == 200:
                 tmp_nar_filepath = tmp_path + nar_filename
                 open(tmp_nar_filepath, 'wb').write(r.content)
                 skinny_nifi_zip.write(tmp_nar_filepath, target_filepath)
 
+        elif exists(saved_generic_nar_filepath):
+            skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
+
         elif validators.url(generic_nar_filepath):
+            print("Downloading {} ...".format(nar_filename))
             r = requests.get(generic_nar_filepath, allow_redirects=True)
             if r.status_code == 200:
                 # download and save nars into a directory to avoid re-downloading
-                saved_nar_filepath = _SAVED_GENERIC_NAR_PATH + nar_filename
-                open(saved_nar_filepath, 'wb').write(r.content)
-                skinny_nifi_zip.write(saved_nar_filepath, target_filepath)
+                open(saved_generic_nar_filepath, 'wb').write(r.content)
+                skinny_nifi_zip.write(saved_generic_nar_filepath, target_filepath)
 
         else:
             print('nar file not found: {}'.format(nar_filename))
