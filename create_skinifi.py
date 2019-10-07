@@ -28,8 +28,10 @@ ESSENTIAL_NARS = [
 ]
 
 DEFAULT_GENERIC_URL = 'https://nifi-default-artifacts.s3.amazonaws.com/'
+REGISTRIES_CONFIG = 'registries.json'
 
 _IMAGE_DIR = 'skinifi-image/'
+_SCRIPTS_PATH = 'skinifi-image/skinifi-scripts/'
 _CUSTOM_NAR_DIR = 'custom-processors/'
 _SAVED_GENERIC_NAR_PATH = _IMAGE_DIR + 'generic-nars/'
 _SKINNY_NIFI_ZIP_PATH = _IMAGE_DIR + 'skinny-nifi-1.9.2-bin.zip'
@@ -108,19 +110,19 @@ def _get_nars_from_registries():
     """
     :return: list of Nars used in nifi registries.
     """
-    if not exists('registries.json'):
-        return
+    if not exists(REGISTRIES_CONFIG):
+        return {}
 
     registry_nars = {}
 
-    with open('registries.json', 'r') as f:
+    with open(REGISTRIES_CONFIG, 'r') as f:
         registries_json = json.load(f)['registries']
 
         for index, registry in enumerate(registries_json):
             base_url = registry['baseUrl']
-            registry_api_url = base_url + "/nifi-registry-api"
+            registry_api_url = base_url + '/nifi-registry-api'
             client = nifi_registry.api_client.ApiClient()
-            use_bundles = registry['useBundles']
+            use_bundles = registry['useBundles'] if 'useBundles' in registry else False
 
             for bucket in registry['buckets']:
                 bucket_id = bucket['bucketId']
@@ -144,13 +146,17 @@ def _get_nars_from_registries():
     return registry_nars.values()
 
 
-def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_path=_CUSTOM_NAR_DIR):
+def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_path=_CUSTOM_NAR_DIR, set_registry=True):
     """
     Create a zip of nifi with reduced artifacts to skinifi-image/skinny-nifi-1.9.2-bin.zip
     :param generic_nars_path: str - url or path to copy generic nars
     :param custom_nars_path: str - url or path to copy custom nars
+    :param set_registry: bool - choose to add flows into the nifi instance
     :return:
     """
+    copyfile(_IMAGE_DIR + '.skinny-nifi-1.9.2-bin.zip', _SKINNY_NIFI_ZIP_PATH)
+    skinny_nifi_zip = ZipFile(_SKINNY_NIFI_ZIP_PATH, mode='a')
+
     generic_nars_path += '/' if not generic_nars_path.endswith('/') else ''
     custom_nars_path += '/' if not custom_nars_path.endswith('/') else ''
 
@@ -165,22 +171,19 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
     if not exists(tmp_path):
         mkdir(tmp_path)
 
-    # find nars and delete duplicates
+    # find nars, separate nars bundled in registry from others, and delete duplicates
     nars_from_registry = _get_nars_from_registries()
     bundled_nars = list(filter(lambda n: n.has_bundle_info(), nars_from_registry))
     unbundled_nars = list(filter(lambda n: n.get_filename() if not n.has_bundle_info() else None, nars_from_registry))
     unbundled_nars += ESSENTIAL_NARS + _get_nars_from_templates()
     unbundled_nars = list(dict.fromkeys(unbundled_nars))
 
-    copyfile(_IMAGE_DIR + '.skinny-nifi-1.9.2-bin.zip', _SKINNY_NIFI_ZIP_PATH)
-    skinny_nifi_zip = ZipFile(_SKINNY_NIFI_ZIP_PATH, mode='a')
-
     # add nar files from nifi registry to skinifi instance
     for nar in bundled_nars:
         nar_filename = nar.get_filename()
-        print("Downloading {} ...".format(nar_filename))
+        print("Downloading {}".format(nar_filename))
 
-        bundle_content_endpoint = '{}/extension-repository/{}/{}/{}/{}/content'\
+        bundle_content_endpoint = '{}/extension-repository/{}/{}/{}/{}/content' \
             .format(nar.api_url, nar.bucket_name, nar.group, nar.artifact, nar.version)
         r = requests.get(bundle_content_endpoint, allow_redirects=True)
         if r.status_code == 200:
@@ -229,6 +232,35 @@ def build_skinifi_instance(generic_nars_path=DEFAULT_GENERIC_URL, custom_nars_pa
     skinny_nifi_zip.close()
 
 
+# create entrypoint script
+def _create_skinifi_entrypoint():
+    f = open(_SCRIPTS_PATH + '.skinifi_entrypoint.sh')
+    contents = f.readlines()
+    f.close()
+
+    # Inject python scripts into the entrypoint script
+    if exists(REGISTRIES_CONFIG):
+        inject_line = contents.index('# ADD PYTHON SCRIPTS BELOW\n') + 1
+
+        registries = []
+        with open(REGISTRIES_CONFIG, 'r') as f:
+            registries_json = json.load(f)['registries']
+
+            for index, registry in enumerate(registries_json):
+                registry_name = registry['name'] if 'name' in registry else 'registry {}'.format(index + 1)
+                registry_api = registry['baseUrl'] + '/nifi-registry-api'
+                registries.insert(0, (registry_name, registry_api))
+
+        for registry_name, registry_api_url in registries:
+            command = 'python3 add_registry.py \"{}\" {} &\n'.format(registry_name, registry_api_url)
+            contents.insert(inject_line, command)
+
+    f = open(_SCRIPTS_PATH + 'skinifi_entrypoint.sh', 'w')
+    contents = ''.join(contents)
+    f.write(contents)
+    f.close()
+
+
 def build_docker_image(generic_nar_path=DEFAULT_GENERIC_URL, custom_nar_path=_CUSTOM_NAR_DIR, tag='skinifi', target=False):
     """
     Create a skinifi docker image
@@ -237,7 +269,6 @@ def build_docker_image(generic_nar_path=DEFAULT_GENERIC_URL, custom_nar_path=_CU
     :param tag: str - the tag of the docker image (default is 'skinifi')
     :param target: bool - create a target directory for the nifi instance and the docker image
     """
-
     if custom_nar_path:
         build_skinifi_instance(generic_nar_path, custom_nar_path)
     else:
@@ -246,9 +277,12 @@ def build_docker_image(generic_nar_path=DEFAULT_GENERIC_URL, custom_nar_path=_CU
     print('Skinny nifi instance created\nCreating docker image...')
 
     # create docker image
+    _create_skinifi_entrypoint()
     client = from_env()
     client.images.build(path=_IMAGE_DIR,  tag=tag)
 
+    # cleanup
+    remove(_SCRIPTS_PATH + 'skinifi_entrypoint.sh')
     if target:
         target_path = 'target/'
         if exists(target_path):
@@ -261,9 +295,6 @@ def build_docker_image(generic_nar_path=DEFAULT_GENERIC_URL, custom_nar_path=_CU
 
 
 if __name__ == '__main__':
-    # tag = 'skinifi'
-    # target = False
-
     parser = argparse.ArgumentParser()
     parser.add_argument('-o', '--target',
                         help='Keep created nifi instance in target/', action='store_true', default=False)

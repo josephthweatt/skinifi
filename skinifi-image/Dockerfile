@@ -36,6 +36,10 @@ ENV NIFI_PID_DIR=${NIFI_HOME}/run
 ENV NIFI_LOG_DIR=${NIFI_HOME}/logs
 
 ADD sh/ ${NIFI_BASE_DIR}/scripts/
+ADD skinifi-scripts/ ${NIFI_BASE_DIR}/scripts/
+RUN chmod +x ${NIFI_BASE_DIR}/scripts/*.sh
+RUN apt-get update && apt-get install -y python3 python3-pip
+RUN python3 -m pip install nipyapi
 
 # Setup NiFi user and create necessary directories
 RUN groupadd -g ${GID} nifi || groupmod -n nifi `getent group ${GID} | cut -d: -f1` \
@@ -94,4 +98,5 @@ WORKDIR ${NIFI_HOME}
 # Also we need to use relative path, because the exec form does not invoke a command shell,
 # thus normal shell processing does not happen:
 # https://docs.docker.com/engine/reference/builder/#exec-form-entrypoint-example
-ENTRYPOINT ["../scripts/start.sh"]
+HEALTHCHECK CMD ip route show | awk '/default/ {print $3}'
+ENTRYPOINT ["/opt/nifi/scripts/skinifi_entrypoint.sh"]

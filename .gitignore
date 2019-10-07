@@ -8,5 +8,6 @@ templates/*
 target/*
 !**/README.MD
 skinifi-image/generic-nars/
+skinifi-image/skinifi-scripts/skinifi_entrypoint.sh
 skinny-nifi-1.9.2-bin.zip
 *.json
